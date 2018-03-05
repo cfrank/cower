@@ -1862,12 +1862,16 @@ aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type,
   aurpkg_t **packages = NULL;
   int r, packagecount;
   unsigned total_len = 0;
+  unsigned offset;
+  char *buf = NULL;
+  const char *arg = "";
+
   for(int i = 0; i < argc; ++i)
     total_len += strlen(argv[i]);
 
   // total length of all arguments combined, plus six arg[]=, plus &, plus \0
-  char *buf = calloc(total_len + argc * 7 + 1, sizeof(char));
-  unsigned offset = 0;
+  buf = calloc(total_len + argc * 7 + 1, sizeof(char));
+  offset = 0;
 
   for(int i = 0; i < argc; ++i) {
     sprintf(&buf[offset], "arg[]=%s&", argv[i]);
@@ -1886,7 +1890,6 @@ aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type,
 
   task_reset_for_rpc(task, url, &response);
 
-  const char *arg = "";
   if (task_http_execute(task, url, arg) != 0) {
     return NULL;
   }
@@ -2024,15 +2027,16 @@ aurpkg_t **task_query(struct task_t *task, const char *arg) {
 aurpkg_t **task_update(struct task_t *task, const char *arg) {
   aurpkg_t **packages;
   alpm_pkg_t *pmpkg;
+  int num_packages;
+  int i;
 
   packages = task_query_info(task, arg);
   if (packages == NULL) {
     return NULL;
   }
 
-  int num_packages = aur_packages_count(packages);
+  num_packages = aur_packages_count(packages);
 
-  int i;
   for(i = 0; i < num_packages; ++i) {
     aurpkg_t *pkg = packages[i];
 
