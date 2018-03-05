@@ -24,6 +24,7 @@ typedef struct aur_t aur_t;
 int aur_new(const char *proto, const char *domain, aur_t **aur);
 void aur_free(aur_t *aur);
 
+char *aur_build_rpc_multi_url(aur_t *aur, const char *args);
 char *aur_build_rpc_url(aur_t *aur, rpc_type type, rpc_by by, const char *arg);
 char *aur_build_url(aur_t *aur, const char *urlpath);
 

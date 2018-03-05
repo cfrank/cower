@@ -204,6 +204,7 @@ static int read_targets_from_file(FILE *in, alpm_list_t **targets);
 static void resolve_one_dep(struct task_t *task, const char *depend);
 static void resolve_pkg_dependencies(struct task_t *task, aurpkg_t *package);
 static rpc_type rpc_op_from_opmask(int opmask);
+static aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type, int argc, const char **argv);
 static aurpkg_t **rpc_do(struct task_t *task, rpc_type type, const char *arg);
 static int ch_working_dir(void);
 static int should_ignore_package(const aurpkg_t *package, regex_t *pattern);
@@ -214,6 +215,7 @@ static void task_reset(struct task_t *, const char *, void *);
 static void task_reset_for_download(struct task_t *, const char *, void *);
 static void task_reset_for_rpc(struct task_t *, const char *, void *);
 static aurpkg_t **task_download(struct task_t*, const char*);
+static aurpkg_t **task_query_info(struct task_t*, const char*);
 static aurpkg_t **task_query(struct task_t*, const char*);
 static aurpkg_t **task_update(struct task_t*, const char*);
 static void *thread_pool(void*);
@@ -1853,6 +1855,56 @@ aurpkg_t **task_download(struct task_t *task, const char *arg) {
   }
 }
 
+aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type,
+                        int argc, const char **argv) {
+  struct buffer_t response = { NULL, 0, 0 };
+  _cleanup_free_ char *url = NULL;
+  aurpkg_t **packages = NULL;
+  int r, packagecount;
+  unsigned total_len = 0;
+  for(int i = 0; i < argc; ++i)
+    total_len += strlen(argv[i]);
+
+  // total length of all arguments combined, plus six arg[]=, plus &, plus \0
+  char *buf = calloc(total_len + argc * 7 + 1, sizeof(char));
+  unsigned offset = 0;
+
+  for(int i = 0; i < argc; ++i) {
+    sprintf(&buf[offset], "arg[]=%s&", argv[i]);
+    offset += (7 + strlen(argv[i]));
+  }
+
+  // Override the last & with a null terminator
+  buf[total_len + argc * 7 - 1] = '\0';
+
+  url = aur_build_rpc_multi_url(task->aur, buf);
+  if(!url) {
+    return NULL;
+  }
+
+  free(buf);
+
+  task_reset_for_rpc(task, url, &response);
+
+  const char *arg = "";
+  if (task_http_execute(task, url, arg) != 0) {
+    return NULL;
+  }
+
+  r = aur_packages_from_json(response.data, &packages, &packagecount);
+  if (r < 0) {
+    cwr_fprintf(stderr, LOG_ERROR, "[%s]: json parsing failed: %s\n", arg, strerror(-r));
+    return NULL;
+  }
+
+  cwr_printf(LOG_DEBUG, "rpc %d request for %s returned %d results\n",
+    type, arg, packagecount);
+
+  free(response.data);
+
+  return packages;
+}
+
 aurpkg_t **rpc_do(struct task_t *task, rpc_type type, const char *arg) {
   struct buffer_t response = { NULL, 0, 0 };
   _cleanup_free_ char *url = NULL;
@@ -1925,6 +1977,33 @@ rpc_type rpc_op_from_opmask(int opmask) {
   } else {
     return RPC_INFO;
   }
+}
+
+aurpkg_t **task_query_info(struct task_t *task, const char *arg) {
+  int argc = alpm_list_count(cfg.targets);
+
+  int i = 0;
+  char **argv = malloc(sizeof(char *) * argc);
+  alpm_list_t *alpm = cfg.targets;
+  char *pkg;
+  for(alpm = cfg.targets; alpm; alpm = alpm->next, ++i) {
+    pkg = alpm->data;
+    char *escaped = curl_easy_escape(NULL, pkg, 0);
+    argv[i] = malloc(sizeof(char) * (strlen(escaped) + 1));
+    strcpy(argv[i], escaped);
+    free(escaped);
+  }
+
+  aurpkg_t **res;
+  res = rpc_do_multi(task, rpc_op_from_opmask(cfg.opmask), argc, (const char **)argv);
+
+  for(int i = 0; i < argc; ++i) {
+    free(argv[i]);
+    argv[i] = NULL;
+  }
+  free(argv);
+
+  return res;
 }
 
 aurpkg_t **task_query(struct task_t *task, const char *arg) {
@@ -2027,6 +2106,12 @@ void *thread_pool(void *arg) {
             strerror(-r));
       }
     }
+
+    // If the only flag given was -i/--info
+    if (cfg.opmask == OP_INFO) {
+      break;
+    }
+
   }
 
   curl_easy_cleanup(task.curl);
@@ -2221,7 +2306,7 @@ int main(int argc, char *argv[]) {
   if (cfg.opmask & OP_UPDATE) {
     task.threadfn = task_update;
   } else if (cfg.opmask & OP_INFO) {
-    task.threadfn = task_query;
+    task.threadfn = task_query_info;
     printfn = cfg.format ? print_pkg_formatted : print_pkg_info;
   } else if (cfg.opmask & OP_SEARCH) {
     task.threadfn = task_query;
@@ -2233,6 +2318,10 @@ int main(int argc, char *argv[]) {
   workq = cfg.targets;
 
   num_threads = alpm_list_count(cfg.targets);
+  if (cfg.opmask == OP_INFO) {
+    num_threads = 1;
+  }
+
   if (num_threads == 0) {
     fprintf(stderr, "error: no targets specified (use -h for help)\n");
     goto finish;
