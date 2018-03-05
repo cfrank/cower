@@ -2025,50 +2025,54 @@ aurpkg_t **task_update(struct task_t *task, const char *arg) {
   aurpkg_t **packages;
   alpm_pkg_t *pmpkg;
 
-  cwr_printf(LOG_VERBOSE, "Checking %s%s%s for updates...\n",
-      colstr.pkg, arg, colstr.nc);
-
-  packages = rpc_do(task, RPC_INFO, arg);
+  packages = task_query_info(task, arg);
   if (packages == NULL) {
     return NULL;
   }
 
-  pmpkg = alpm_db_get_pkg(db_local, arg);
-  if (!pmpkg) {
-    cwr_fprintf(stderr, LOG_WARN, "skipping uninstalled package %s\n", arg);
-    goto finish;
-  }
+  int num_packages = aur_packages_count(packages);
 
-  if (alpm_pkg_vercmp(packages[0]->version, alpm_pkg_get_version(pmpkg)) > 0) {
-    if (alpm_list_find(cfg.ignore.pkgs, arg, globcompare)) {
-      if (!cfg.quiet) {
-        cwr_fprintf(stderr, LOG_WARN, "%s%s%s [ignored] %s%s%s -> %s%s%s\n",
-            colstr.pkg, arg, colstr.nc,
-            colstr.ood, alpm_pkg_get_version(pmpkg), colstr.nc,
-            colstr.utd, packages[0]->version, colstr.nc);
-      }
-      goto finish;
+  int i;
+  for(i = 0; i < num_packages; ++i) {
+    aurpkg_t *pkg = packages[i];
+
+    cwr_printf(LOG_VERBOSE, "Checking %s%s%s for updates...\n",
+      colstr.pkg, pkg->name, colstr.nc);
+
+    pmpkg = alpm_db_get_pkg(db_local, pkg->name);
+    if (!pmpkg) {
+      cwr_fprintf(stderr, LOG_WARN, "skipping uninstalled package %s\n", arg);
+      continue;
     }
 
-    if (cfg.opmask & OP_DOWNLOAD) {
-      aur_packages_free(task_download(task, packages[0]->name));
-    } else {
-      if (cfg.quiet) {
-        printf("%s%s%s\n", colstr.pkg, arg, colstr.nc);
+    if (alpm_pkg_vercmp(pkg->version, alpm_pkg_get_version(pmpkg)) > 0) {
+      if (alpm_list_find(cfg.ignore.pkgs, pkg->name, globcompare)) {
+        if (!cfg.quiet) {
+          cwr_fprintf(stderr, LOG_WARN, "%s%s%s [ignored] %s%s%s -> %s%s%s\n",
+              colstr.pkg, pkg->name, colstr.nc,
+              colstr.ood, alpm_pkg_get_version(pmpkg), colstr.nc,
+              colstr.utd, pkg->version, colstr.nc);
+        }
+        continue;
+      }
+
+      if (cfg.opmask & OP_DOWNLOAD) {
+        aur_packages_free(task_download(task, pkg->name));
       } else {
-        cwr_printf(LOG_INFO, "%s%s %s%s%s -> %s%s%s\n",
-            colstr.pkg, arg,
-            colstr.ood, alpm_pkg_get_version(pmpkg), colstr.nc,
-            colstr.utd, packages[0]->version, colstr.nc);
+        if (cfg.quiet) {
+          printf("%s%s%s\n", colstr.pkg, pkg->name, colstr.nc);
+        } else {
+          cwr_printf(LOG_INFO, "%s%s %s%s%s -> %s%s%s\n",
+              colstr.pkg, pkg->name,
+              colstr.ood, alpm_pkg_get_version(pmpkg), colstr.nc,
+              colstr.utd, pkg->version, colstr.nc);
+        }
       }
-    }
 
-    return packages;
+    }
   }
 
-finish:
-  aur_packages_free(packages);
-  return NULL;
+  return packages;
 }
 
 void *thread_pool(void *arg) {
@@ -2108,7 +2112,7 @@ void *thread_pool(void *arg) {
     }
 
     // If the only flag given was -i/--info
-    if (cfg.opmask == OP_INFO) {
+    if ((cfg.opmask & OP_INFO) || (cfg.opmask & OP_UPDATE)) {
       break;
     }
 
@@ -2318,7 +2322,7 @@ int main(int argc, char *argv[]) {
   workq = cfg.targets;
 
   num_threads = alpm_list_count(cfg.targets);
-  if (cfg.opmask == OP_INFO) {
+  if ((cfg.opmask & OP_INFO) || (cfg.opmask & OP_UPDATE)) {
     num_threads = 1;
   }
 
