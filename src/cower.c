@@ -1872,8 +1872,8 @@ aurpkg_t **fetch_json(struct task_t *task, const char *id, const char *url) {
     return NULL;
   }
 
-  cwr_printf(LOG_DEBUG, "rpc info request for multiple requests returned %d results\n",
-    packagecount);
+  cwr_printf(LOG_DEBUG, "rpc info request for [%s] returned %d results\n",
+    id, packagecount);
 
   free(response.data);
 
@@ -1889,8 +1889,9 @@ aurpkg_t **rpc_do_multi(struct task_t *task, int argc, const char **argv) {
   for (int i = 0; i < argc; ++i) {
     total_len += strlen("&arg[]=") + strlen(argv[i]);
   }
+  buf = malloc(total_len + 1);
 
-  p = buf = malloc(total_len + 1);
+  p = buf;
   for(int i = 0; i < argc; ++i) {
     p = stpcpy(stpcpy(p, "&arg[]="), argv[i]);
   }
