@@ -61,7 +61,7 @@ static char *aur_urlf(aur_t *aur, const char *urlpath_format, ...) {
 }
 
 char *aur_build_rpc_multi_url(aur_t *aur, const char *args) {
-  return aur_urlf(aur, "/rpc.php?v=%d&type=info&%s", aur->rpc_version, args);
+  return aur_urlf(aur, "/rpc.php?v=%d&type=info%s", aur->rpc_version, args);
 }
 
 char *aur_build_rpc_url(aur_t *aur, rpc_type type, rpc_by by, const char *arg) {
