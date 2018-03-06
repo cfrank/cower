@@ -204,7 +204,7 @@ static int read_targets_from_file(FILE *in, alpm_list_t **targets);
 static void resolve_one_dep(struct task_t *task, const char *depend);
 static void resolve_pkg_dependencies(struct task_t *task, aurpkg_t *package);
 static rpc_type rpc_op_from_opmask(int opmask);
-static aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type, int argc, const char **argv);
+static aurpkg_t **rpc_do_multi(struct task_t *task, int argc, const char **argv);
 static aurpkg_t **rpc_do(struct task_t *task, rpc_type type, const char *arg);
 static int ch_working_dir(void);
 static int should_ignore_package(const aurpkg_t *package, regex_t *pattern);
@@ -1855,41 +1855,32 @@ aurpkg_t **task_download(struct task_t *task, const char *arg) {
   }
 }
 
-aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type,
-                        int argc, const char **argv) {
+aurpkg_t **rpc_do_multi(struct task_t *task, int argc, const char **argv) {
   struct buffer_t response = { NULL, 0, 0 };
   _cleanup_free_ char *url = NULL;
   aurpkg_t **packages = NULL;
   int r, packagecount;
   unsigned total_len = 0;
-  unsigned offset;
-  char *buf = NULL;
-  const char *arg = "";
+  char *p;
+  _cleanup_free_ char *buf = NULL;
+  const char *arg = "multi";
 
-  for(int i = 0; i < argc; ++i)
+  for (int i = 0; i < argc; ++i) {
     total_len += strlen(argv[i]);
-
-  /* total length of all arguments combined, plus six arg[]=, plus &, plus \0 */
-  buf = calloc(total_len + argc * 7 + 1, sizeof(char));
-  offset = 0;
-
-  for(int i = 0; i < argc; ++i) {
-    sprintf(&buf[offset], "arg[]=%s&", argv[i]);
-    offset += (7 + strlen(argv[i]));
   }
 
-  /* Override the last & with a null terminator */
-  buf[total_len + argc * 7 - 1] = '\0';
+  /* total length of all arguments combined, plus six arg[]=, plus &, plus \0 */
+  p = buf = calloc(total_len + argc * 7 + 1, sizeof(char));
+  for(int i = 0; i < argc; ++i) {
+    p = stpcpy(stpcpy(p, "&arg[]="), argv[i]);
+  }
 
   url = aur_build_rpc_multi_url(task->aur, buf);
   if(!url) {
     return NULL;
   }
 
-  free(buf);
-
   task_reset_for_rpc(task, url, &response);
-
   if (task_http_execute(task, url, arg) != 0) {
     return NULL;
   }
@@ -1900,8 +1891,8 @@ aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type,
     return NULL;
   }
 
-  cwr_printf(LOG_DEBUG, "rpc %d request for %s returned %d results\n",
-    type, arg, packagecount);
+  cwr_printf(LOG_DEBUG, "rpc info request for multiple requests returned %d results\n",
+    packagecount);
 
   free(response.data);
 
@@ -1982,27 +1973,21 @@ rpc_type rpc_op_from_opmask(int opmask) {
   }
 }
 
-aurpkg_t **task_query_info(struct task_t *task, const char *arg) {
+aurpkg_t **task_query_info(struct task_t *task, UNUSED const char *arg) {
   int argc = alpm_list_count(cfg.targets);
 
   int i = 0;
   char **argv = malloc(sizeof(char *) * argc);
-  alpm_list_t *alpm = cfg.targets;
-  char *pkg;
-  for(alpm = cfg.targets; alpm; alpm = alpm->next, ++i) {
-    pkg = alpm->data;
-    char *escaped = curl_easy_escape(NULL, pkg, 0);
-    argv[i] = malloc(sizeof(char) * (strlen(escaped) + 1));
-    strcpy(argv[i], escaped);
-    free(escaped);
+  alpm_list_t *target = cfg.targets;
+
+  for (target = cfg.targets; target; target = target->next, ++i) {
+    argv[i] = curl_easy_escape(NULL, target->data, 0);
   }
 
-  aurpkg_t **res;
-  res = rpc_do_multi(task, rpc_op_from_opmask(cfg.opmask), argc, (const char **)argv);
+  aurpkg_t **res = rpc_do_multi(task, argc, (const char **)argv);
 
   for(int i = 0; i < argc; ++i) {
     free(argv[i]);
-    argv[i] = NULL;
   }
   free(argv);
 
