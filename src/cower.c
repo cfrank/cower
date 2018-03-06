@@ -1869,7 +1869,7 @@ aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type,
   for(int i = 0; i < argc; ++i)
     total_len += strlen(argv[i]);
 
-  // total length of all arguments combined, plus six arg[]=, plus &, plus \0
+  /* total length of all arguments combined, plus six arg[]=, plus &, plus \0 */
   buf = calloc(total_len + argc * 7 + 1, sizeof(char));
   offset = 0;
 
@@ -1878,7 +1878,7 @@ aurpkg_t **rpc_do_multi(struct task_t *task, rpc_type type,
     offset += (7 + strlen(argv[i]));
   }
 
-  // Override the last & with a null terminator
+  /* Override the last & with a null terminator */
   buf[total_len + argc * 7 - 1] = '\0';
 
   url = aur_build_rpc_multi_url(task->aur, buf);
@@ -2115,7 +2115,7 @@ void *thread_pool(void *arg) {
       }
     }
 
-    // If the only flag given was -i/--info
+    /* If the only flag given was -i/--info */
     if ((cfg.opmask & OP_INFO) || (cfg.opmask & OP_UPDATE)) {
       break;
     }
