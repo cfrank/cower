@@ -178,6 +178,7 @@ static aurpkg_t **dedupe_results(aurpkg_t **list);
 static aurpkg_t **download(struct task_t *task, const char*);
 static aurpkg_t **filter_results(aurpkg_t **);
 static int find_search_fragment(const char *, char **);
+static aurpkg_t **fetch_json(struct task_t *task, const char *id, const char *url);
 static char *get_file_as_buffer(const char*);
 static int getcols(void);
 static int get_config_path(char *config_path, size_t pathlen);
@@ -1855,39 +1856,19 @@ aurpkg_t **task_download(struct task_t *task, const char *arg) {
   }
 }
 
-aurpkg_t **rpc_do_multi(struct task_t *task, int argc, const char **argv) {
+aurpkg_t **fetch_json(struct task_t *task, const char *id, const char *url) {
   struct buffer_t response = { NULL, 0, 0 };
-  _cleanup_free_ char *url = NULL;
   aurpkg_t **packages = NULL;
   int r, packagecount;
-  unsigned total_len = 0;
-  char *p;
-  _cleanup_free_ char *buf = NULL;
-  const char *arg = "multi";
-
-  for (int i = 0; i < argc; ++i) {
-    total_len += strlen(argv[i]);
-  }
-
-  /* total length of all arguments combined, plus six arg[]=, plus &, plus \0 */
-  p = buf = calloc(total_len + argc * 7 + 1, sizeof(char));
-  for(int i = 0; i < argc; ++i) {
-    p = stpcpy(stpcpy(p, "&arg[]="), argv[i]);
-  }
-
-  url = aur_build_rpc_multi_url(task->aur, buf);
-  if(!url) {
-    return NULL;
-  }
 
   task_reset_for_rpc(task, url, &response);
-  if (task_http_execute(task, url, arg) != 0) {
+  if (task_http_execute(task, url, id) != 0) {
     return NULL;
   }
 
   r = aur_packages_from_json(response.data, &packages, &packagecount);
   if (r < 0) {
-    cwr_fprintf(stderr, LOG_ERROR, "[%s]: json parsing failed: %s\n", arg, strerror(-r));
+    cwr_fprintf(stderr, LOG_ERROR, "[%s]: json parsing failed: %s\n", id, strerror(-r));
     return NULL;
   }
 
@@ -1899,34 +1880,39 @@ aurpkg_t **rpc_do_multi(struct task_t *task, int argc, const char **argv) {
   return packages;
 }
 
-aurpkg_t **rpc_do(struct task_t *task, rpc_type type, const char *arg) {
-  struct buffer_t response = { NULL, 0, 0 };
+aurpkg_t **rpc_do_multi(struct task_t *task, int argc, const char **argv) {
   _cleanup_free_ char *url = NULL;
-  aurpkg_t **packages = NULL;
-  int r, packagecount;
+  _cleanup_free_ char *buf = NULL;
+  unsigned total_len = 0;
+  char *p;
+
+  for (int i = 0; i < argc; ++i) {
+    total_len += strlen("&arg[]=") + strlen(argv[i]);
+  }
+
+  p = buf = malloc(total_len + 1);
+  for(int i = 0; i < argc; ++i) {
+    p = stpcpy(stpcpy(p, "&arg[]="), argv[i]);
+  }
+  *p = '\0';
+
+  url = aur_build_rpc_multi_url(task->aur, buf);
+  if (!url) {
+    return NULL;
+  }
+
+  return fetch_json(task, "multi", url);
+}
+
+aurpkg_t **rpc_do(struct task_t *task, rpc_type type, const char *arg) {
+  _cleanup_free_ char *url = NULL;
 
   url = aur_build_rpc_url(task->aur, type, cfg.search_by, arg);
   if (url == NULL) {
     return NULL;
   }
 
-  task_reset_for_rpc(task, url, &response);
-  if (task_http_execute(task, url, arg) != 0) {
-    return NULL;
-  }
-
-  r = aur_packages_from_json(response.data, &packages, &packagecount);
-  if (r < 0) {
-    cwr_fprintf(stderr, LOG_ERROR, "[%s]: json parsing failed: %s\n", arg, strerror(-r));
-    return NULL;
-  }
-
-  cwr_printf(LOG_DEBUG, "rpc %d request for %s returned %d results\n",
-      type, arg, packagecount);
-
-  free(response.data);
-
-  return packages;
+  return fetch_json(task, arg, url);
 }
 
 int find_search_fragment(const char *arg, char **fragment) {
@@ -1974,19 +1960,21 @@ rpc_type rpc_op_from_opmask(int opmask) {
 }
 
 aurpkg_t **task_query_info(struct task_t *task, UNUSED const char *arg) {
-  int argc = alpm_list_count(cfg.targets);
-
-  int i = 0;
-  char **argv = malloc(sizeof(char *) * argc);
+  int argc, i = 0;
+  char **argv;
+  aurpkg_t **res;
   alpm_list_t *target = cfg.targets;
+
+  argc = alpm_list_count(cfg.targets);
+  argv = malloc(sizeof(char *) * argc);
 
   for (target = cfg.targets; target; target = target->next, ++i) {
     argv[i] = curl_easy_escape(NULL, target->data, 0);
   }
 
-  aurpkg_t **res = rpc_do_multi(task, argc, (const char **)argv);
+  res = rpc_do_multi(task, argc, (const char **)argv);
 
-  for(int i = 0; i < argc; ++i) {
+  for (int i = 0; i < argc; ++i) {
     free(argv[i]);
   }
   free(argv);
