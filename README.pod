@@ -251,6 +251,11 @@ and falling back to:
 
 A documented example config file can be found at /usr/share/doc/cower/config.
 
+=head1 KNOWN BUGS
+
+Attempting to use B<--update> with a sufficiently large number of foreign
+packages will cause the AUR to respond with HTTP 414.
+
 =head1 AUTHOR
 
 Dave Reisner E<lt>d@falconindy.comE<gt>
