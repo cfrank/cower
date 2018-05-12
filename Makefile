@@ -2,7 +2,7 @@
 
 OUT        = cower
 
-VERSION    = 17
+VERSION    = 18
 VDEVEL     = $(shell test -d .git && git describe 2>/dev/null)
 
 ifneq "$(VDEVEL)" ""
