@@ -2011,11 +2011,18 @@ aurpkg_t **task_update(struct task_t *task, const char *arg) {
 
   num_packages = aur_packages_count(packages);
 
+  if (cfg.quiet) {
+    cwr_printf(LOG_VERBOSE, "Checking %d packages for updates...\n",
+      num_packages);
+  }
+
   for(i = 0; i < num_packages; ++i) {
     aurpkg_t *pkg = packages[i];
-
-    cwr_printf(LOG_VERBOSE, "Checking %s%s%s for updates...\n",
-      colstr.pkg, pkg->name, colstr.nc);
+    
+    if (!cfg.quiet) {
+        cwr_printf(LOG_VERBOSE, "Checking %s%s%s for updates...\n",
+          colstr.pkg, pkg->name, colstr.nc);
+    }
 
     pmpkg = alpm_db_get_pkg(db_local, pkg->name);
     if (!pmpkg) {
