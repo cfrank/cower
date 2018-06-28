@@ -2020,8 +2020,8 @@ aurpkg_t **task_update(struct task_t *task, const char *arg) {
     aurpkg_t *pkg = packages[i];
     
     if (!cfg.quiet) {
-        cwr_printf(LOG_VERBOSE, "Checking %s%s%s for updates...\n",
-          colstr.pkg, pkg->name, colstr.nc);
+      cwr_printf(LOG_VERBOSE, "Checking %s%s%s for updates...\n",
+        colstr.pkg, pkg->name, colstr.nc);
     }
 
     pmpkg = alpm_db_get_pkg(db_local, pkg->name);
